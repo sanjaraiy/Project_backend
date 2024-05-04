@@ -51,7 +51,7 @@ const userSchema = new Schema({
 
 
 //Imp :- 
-//====Arrow can't use it because it doen't have reference of this in userSchema so, can't be manipulated directly inside the userSchema context=====
+//====Arrow can't use it because it doesn't have reference of this in userSchema so, can't be manipulated directly inside the userSchema context=====
 userSchema.pre("save",async function(next){
     if(!this.isModified("password")) return next();
 
