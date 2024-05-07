@@ -27,7 +27,7 @@ const videoSchema = new Schema({
         type:Number,
         default : 0,
     },
-    isPublihed : {
+    isPublished : {
     type : Boolean,
     default:true,
     },
@@ -38,7 +38,7 @@ const videoSchema = new Schema({
 
 });
 
-//===== AggregatePaginate use framework as a plugin ==================
+//===== AggregatePaginate is used framework as a plugin ==================
 videoSchema.plugin(mongooseAggregatePaginate);
 
 

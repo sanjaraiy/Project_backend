@@ -7,15 +7,19 @@ import jwt from 'jsonwebtoken';
 
 
 const generateAccessAndRefreshTokens = async (userId) => {
-   try {
+   try { 
+      //step 1 :- find user in db by userId
       const user = await User.findById(userId);
-
+      
+      //step 2 :- generate accessToken and refreshToken using defined custom methods in userSchema
       const accessToken = user.generateAccessToken();
       const refreshToken = user.generateRefreshToken();
-
+      
+      //step 3 :- Store refreshToken in db
       user.refreshToken = refreshToken;
       await user.save({ validateBeforeSave: false});
-
+      
+      //step 4 :- return accessToken and refreshToken
       return {accessToken, refreshToken};
 
    } catch (error) {
@@ -100,7 +104,7 @@ const loginUser = asyncHandler(async (req,res)=>{
    //  step 1 :- Get data from frontend
    const {username, email, password} = req.body;
     
-   // step 2 :- validated username,email,password - Not empty
+   // step 2 :- validated username, email, password - Not empty
     if(!(username || email)){
        throw new ApiError(400, "username or email is required");
     }
@@ -140,6 +144,9 @@ const loginUser = asyncHandler(async (req,res)=>{
 
 
 const logoutUser = asyncHandler(async (req, res)=>{
+   //step 1 :- get user_Id from frontend
+   //step 2 :- find the user 
+   //step 3 :- reset user stored refreshToken in db
    await User.findByIdAndUpdate(
       req.user._id,
       {
@@ -150,11 +157,14 @@ const logoutUser = asyncHandler(async (req, res)=>{
       }
    )
 
+
+   //step 4 :- set the options
    const options  = {
       httpOnly : true,
       secure: true,
    }
-
+   
+   //step 5 :- clear the cookies from frontend and send response of logout status
    return res
    .status(200)
    .clearCookie("accessToken", options)
@@ -163,33 +173,40 @@ const logoutUser = asyncHandler(async (req, res)=>{
 
 })
 
+
 const refreshAccessToken = asyncHandler(async (req, res)=>{
  try {
+    //step 1 :- get the refreshToken from frontend
     const incomingRefreshToken = req.cookies.refreshToken || req.body.refreshToken
-  
+    
+    //step 2 :- Validate the incomingRefreshToken (-Not empty)
     if(!incomingRefreshToken){
        throw new ApiError(401, "unauthorized request");
     }
-  
+    
+   //step 3 :- Decode the incomingRefreshToken
    const decodedToken = jwt.verify(incomingRefreshToken,process.env.REFRESH_TOKEN_SECRET);
-  
+    
+   //step 4 :- check for user by using userId in DecodedToken
    const user = await User.findById(decodedToken?._id);
-  
+   
    if(!user){
      throw new ApiError(401, "Invalid refresh token");
    }
   
+   //step 5 :- check for incomingRefreshToken and stored refreshToken in db are equal
    if(incomingRefreshToken !== user?.refreshToken){
       throw new ApiError(401, "Refresh token is expired or used")
    }
-  
+   
+   //step 6 :- generate new accessToken and refreshToken
    const options = {
      httpOnly : true,
      secure : true,
    }
-  
    const {accessToken, newRefreshToken} = await generateAccessAndRefreshTokens(user._id);
   
+   //step 7 :- send new generated accessToken and refreshToken
    return res
    .status(200)
    .cookie("accessToken", accessToken, options)
@@ -202,9 +219,161 @@ const refreshAccessToken = asyncHandler(async (req, res)=>{
  }
 })
 
+
+const changeCurrentPassword = asyncHandler(async(req,res)=>{
+   //step 1 :- get the oldPassword, newPassword from frontend
+   const {oldPassword, newPassword,confirmPassword} = req.body;
+    
+   // if(!(newPassword === confirmPassword)){
+
+   // }
+    
+   //step 2 :- find the user by using user.Id
+   const user = await User.findById(req.user?._id);
+    
+   //step 3 :- check for old password by using custom method defined in userSchema
+   const isPasswordCorrect = await user.isPasswordCorrect(oldPassword);
+   
+   if(!isPasswordCorrect){
+      throw new ApiError(400, "Invalid old password");
+   }
+    
+   //step 4 :- store new password in db
+   user.password = newPassword
+   await user.save({validateBeforeSave:false});
+   
+   //step 5 :- send the response to the frontend 
+   return res
+    .status(200)
+    .json(new ApiResponse(200,{},"Password changed successfully"))
+
+})
+
+
+const getCurrentUser = asyncHandler(async(req,res)=>{
+   //step 1 :- get user from req.user (already run auth-middleware and store userInfo in req.user)
+   return res
+    .status(200)
+    .json(200, req.user, "current user fetched successfully")
+})
+
+
+const updateAccountDetails = asyncHandler(async(req, res)=>{
+   // step 1 :- get fullname and email from frontend
+   const {fullName, email} = req.body;
+
+   // step 2 :- validate (not, empty)
+   if(!fullName || !email){
+      throw new ApiError(400, "All fields are required")
+   }
+  
+   //step 3 :- find the user in db by using userId
+   //step 4 :- update the fullname and email in db
+   const user = await User.findByIdAndUpdate(
+      req.user?._id,
+      {
+         $set : {
+            fullName,
+            email: email
+         }
+      },
+      {new: true}
+   ).select("-password")
+
+   //step 5 :- send the new userInfo to the frontend
+   return res
+     .status(200)
+     .json(new ApiResponse(200, user, "Account details updated successfully"))
+})
+
+
+const updateUserAvatar = asyncHandler(async(req, res)=>{
+   //step 1 :- get avatar path from middleware multer + req.file (frontend)
+    const avatarLocalPath = req.file?.path;
+
+   //step 2 :- validate (not, empty)
+    if(!avatarLocalPath){
+      throw new ApiError(400, "Avatar file is missing")
+    }
+   
+   //step 3 :- avatar upload on cloudinary
+   const avatar = await uploadOnCloudinary(avatarLocalPath);
+   
+   //step 4 :- check for cloudinary url getting 
+   if(!avatar.url){
+      throw new ApiError(400, "Error while uploading on avatar")
+   }
+   
+   //step 5 :- find the user using userId and update the avatar url in db
+   const user = await User.findByIdAndUpdate(
+      req.user?._id,
+      {
+         $set : {
+            avatar : avatar.url
+         }
+      },
+      { new : true}
+   ).select("-password")
+   
+   //step 6 :- send reponse to the frontend 
+   return res
+      .status(200)
+      .json(
+         new ApiResponse(200, user, "Avatar updated successfully")
+      )
+})
+
+
+const updateUserCoverImage = asyncHandler(async(req,res)=>{
+   //step 1 :- get coverImage from multer + req.file (middleware) from frontend
+    const coverImageLocalPath = req.file?.path;
+    
+   //step 2 :- validate (not, empty)
+    if(!coverImageLocalPath){
+      throw new ApiError(400, "CoverImage file is missing");
+    }
+   
+   //step 3 :- upload the coverImage on cloudinary
+    const coverImage = await uploadOnCloudinary(coverImageLocalPath);
+   
+   //step 4 :- check for cloudinary url getting
+    if(!coverImage.url){
+      throw new ApiError(400, "Error while uploading on coverImage");
+    }
+   
+   //step 5 :- find user by using userId and update the coverImage in db
+   const user = await User.findByIdAndUpdate(
+      req.user?._id,
+      {
+         $set : {
+            coverImage : coverImage.url
+         },
+         
+      },
+      {
+         new : true
+      }
+    ).select("-password")
+   
+   //step 6 :- send the response to the updated coverImage to the frontend
+   return res
+      .status(200)
+      .json(
+         new ApiResponse(200, user, "Cover image updated successfully")
+      )
+
+})
+
+
 export {
    registerUser,
    loginUser,
    logoutUser,
    refreshAccessToken,
+   changeCurrentPassword,
+   getCurrentUser,
+   updateAccountDetails,
+   updateUserAvatar,
+   updateUserCoverImage,
+   
 }
